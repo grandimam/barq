@@ -18,17 +18,15 @@ uv add barq
 ## Development Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/taraqqi/barq.git
 cd barq
 
-# Install dependencies (uses free-threaded Python 3.13t)
+# Install
 uv sync
 
-# Run the example
 uv run python examples/basic.py
 
-# Test it
+# Test
 curl http://localhost:8000/
 curl http://localhost:8000/items/1
 curl -X POST http://localhost:8000/items -H "Content-Type: application/json" -d '{"name":"Widget","price":9.99}'
@@ -37,10 +35,9 @@ curl -X POST http://localhost:8000/items -H "Content-Type: application/json" -d 
 ## Running Benchmarks
 
 ```bash
-# Install dev dependencies
 uv sync --dev
 
-# Run benchmark (Barq vs FastAPI)
+# Run benchmark
 uv run python benchmarks/run_benchmark.py 1000 10
 ```
 

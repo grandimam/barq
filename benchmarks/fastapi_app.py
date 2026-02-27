@@ -3,6 +3,7 @@ import sqlite3
 from contextvars import ContextVar
 from typing import Annotated
 
+import blake3
 from fastapi import Depends
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -54,7 +55,7 @@ class JsonResponse(BaseModel):
 
 
 class CpuResponse(BaseModel):
-    result: int
+    hash: str
     iterations: int
 
 
@@ -79,11 +80,12 @@ def db_endpoint(db: Annotated[sqlite3.Connection, Depends(get_db)]) -> list[User
 
 @app.get("/cpu")
 def cpu_endpoint() -> CpuResponse:
-    total = 0
-    iterations = 100000
-    for i in range(iterations):
-        total += i * i
-    return CpuResponse(result=total, iterations=iterations)
+    iterations = 50
+    data = b"x" * (1024 * 1024)
+    result = ""
+    for _ in range(iterations):
+        result = blake3.blake3(data).hexdigest()
+    return CpuResponse(hash=result, iterations=iterations)
 
 
 @app.on_event("startup")
