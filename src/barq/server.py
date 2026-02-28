@@ -8,8 +8,12 @@ from typing import Callable
 
 from .http import HTTPParser
 from .http import write_response
+from .types import HTTPParseError
 from .types import Request
 from .types import Response
+
+KEEP_ALIVE_TIMEOUT = 30.0
+MAX_REQUESTS_PER_CONN = 1000
 
 
 class ThreadPool:
@@ -103,19 +107,45 @@ class Server:
             sock.close()
 
     def _handle(self, client: socket.socket) -> None:
+        client.settimeout(KEEP_ALIVE_TIMEOUT)
+        reader = SocketReader(client)
+        requests_handled = 0
+
         try:
-            reader = SocketReader(client)
-            raw = HTTPParser(reader).parse()
-            request = Request(
-                method=raw.method,
-                path=raw.path,
-                headers=raw.headers,
-                query_string=raw.query_string,
-                body=raw.body,
-            )
-            response = self.handler(request)
-            write_response(client, response.status_code, response.headers, response.body)
+            while requests_handled < MAX_REQUESTS_PER_CONN:
+                try:
+                    raw = HTTPParser(reader).parse()
+                except (ConnectionError, TimeoutError, HTTPParseError):
+                    break
+
+                request = Request(
+                    method=raw.method,
+                    path=raw.path,
+                    headers=raw.headers,
+                    query_string=raw.query_string,
+                    body=raw.body,
+                )
+
+                connection_header = raw.headers.get("connection", "").lower()
+                keep_alive = connection_header != "close"
+
+                response = self.handler(request)
+
+                if not keep_alive:
+                    response.headers["connection"] = "close"
+                else:
+                    response.headers["connection"] = "keep-alive"
+
+                write_response(client, response.status_code, response.headers, response.body)
+                requests_handled += 1
+
+                if not keep_alive:
+                    break
+
         except Exception:
-            write_response(client, 500, {"content-length": "0"}, b"")
+            try:
+                write_response(client, 500, {"content-length": "0", "connection": "close"}, b"")
+            except Exception:
+                pass
         finally:
             client.close()

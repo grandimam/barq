@@ -7,6 +7,18 @@ from urllib.parse import parse_qs
 
 from pydantic import BaseModel
 
+try:
+    import orjson
+    HAS_ORJSON = True
+except ImportError:
+    HAS_ORJSON = False
+
+
+def json_dumps(obj: Any) -> bytes:
+    if HAS_ORJSON:
+        return orjson.dumps(obj)
+    return json.dumps(obj).encode()
+
 
 class HTTPException(Exception):
     def __init__(self, status_code: int, detail: str = ""):
@@ -58,9 +70,9 @@ class Response:
             body = data.model_dump_json().encode()
         elif isinstance(data, list):
             items = [x.model_dump() if isinstance(x, BaseModel) else x for x in data]
-            body = json.dumps(items).encode()
+            body = json_dumps(items)
         else:
-            body = json.dumps(data).encode()
+            body = json_dumps(data)
 
         return cls(
             status_code=status_code,
