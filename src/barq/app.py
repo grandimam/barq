@@ -1,5 +1,4 @@
 import inspect
-import re
 
 from dataclasses import dataclass
 from typing import Any
@@ -11,6 +10,8 @@ from typing import get_type_hints
 from pydantic import BaseModel
 from pydantic import ValidationError
 
+from .router import RadixRouter
+from .router import RouteData
 from .server import Server
 from .types import HTTPException
 from .types import Request
@@ -23,50 +24,17 @@ class Depends:
 
 
 @dataclass(slots=True)
-class Route:
-    path: str
-    method: str
-    handler: Callable[..., Any]
-    pattern: re.Pattern[str]
-    param_names: list[str]
-
-
-class Router:
-    PARAM_RE = re.compile(r"\{(\w+)\}")
-
-    def __init__(self):
-        self.routes: list[Route] = []
-
-    def add(self, path: str, method: str, handler: Callable[..., Any]) -> None:
-        param_names: list[str] = []
-        regex_parts: list[str] = []
-        last = 0
-
-        for m in self.PARAM_RE.finditer(path):
-            regex_parts.append(re.escape(path[last:m.start()]))
-            param_names.append(m.group(1))
-            regex_parts.append(f"(?P<{m.group(1)}>[^/]+)")
-            last = m.end()
-
-        regex_parts.append(re.escape(path[last:]))
-        pattern = re.compile("^" + "".join(regex_parts) + "$")
-
-        self.routes.append(Route(path, method, handler, pattern, param_names))
-
-    def match(self, path: str, method: str) -> tuple[Route, dict[str, str]] | None:
-        for route in self.routes:
-            if route.method != method:
-                continue
-            m = route.pattern.match(path)
-            if m:
-                return route, {k: m.group(k) for k in route.param_names}
-        return None
+class HandlerMeta:
+    sig: inspect.Signature
+    hints: dict[str, Any]
+    params: list[tuple[str, inspect.Parameter, Any]]
 
 
 class Barq:
     def __init__(self):
-        self.router = Router()
+        self.router = RadixRouter()
         self._startup: list[Callable[[], None]] = []
+        self._dep_meta: dict[Callable, HandlerMeta] = {}
 
     def get(self, path: str) -> Callable:
         return self._route(path, "GET")
@@ -82,7 +50,8 @@ class Barq:
 
     def _route(self, path: str, method: str) -> Callable:
         def decorator(fn: Callable) -> Callable:
-            self.router.add(path, method, self._wrap(fn))
+            meta = self._build_meta(fn)
+            self.router.add(path, method, fn, meta)
             return fn
         return decorator
 
@@ -90,37 +59,29 @@ class Barq:
         self._startup.append(fn)
         return fn
 
-    def _wrap(self, fn: Callable) -> Callable[[Request, dict[str, str]], Response]:
+    def _build_meta(self, fn: Callable) -> HandlerMeta:
         sig = inspect.signature(fn)
         hints = get_type_hints(fn, include_extras=True) if hasattr(fn, "__annotations__") else {}
-
-        def handler(request: Request, path_params: dict[str, str]) -> Response:
-            kwargs = self._resolve(fn, sig, hints, request, path_params)
-            result = fn(**kwargs)
-            return self._to_response(result)
-        return handler
+        params = [(name, param, hints.get(name)) for name, param in sig.parameters.items()]
+        return HandlerMeta(sig, hints, params)
 
     def _resolve(
         self,
-        _fn: Callable,
-        sig: inspect.Signature,
-        hints: dict[str, Any],
+        meta: HandlerMeta,
         request: Request,
         path_params: dict[str, str],
+        dep_cache: dict[Callable, Any],
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
-        cache: dict[Callable, Any] = {}
 
-        for name, param in sig.parameters.items():
-            hint = hints.get(name)
-
+        for name, param, hint in meta.params:
             if hint is Request:
                 kwargs[name] = request
                 continue
 
             dep = self._get_depends(hint)
             if dep:
-                kwargs[name] = self._resolve_dep(dep, request, path_params, cache)
+                kwargs[name] = self._resolve_dep(dep, request, path_params, dep_cache)
                 continue
 
             if name in path_params:
@@ -149,6 +110,11 @@ class Barq:
                     return arg
         return None
 
+    def _get_dep_meta(self, fn: Callable) -> HandlerMeta:
+        if fn not in self._dep_meta:
+            self._dep_meta[fn] = self._build_meta(fn)
+        return self._dep_meta[fn]
+
     def _resolve_dep(
         self,
         dep: Depends,
@@ -158,9 +124,8 @@ class Barq:
     ) -> Any:
         if dep.fn in cache:
             return cache[dep.fn]
-        sig = inspect.signature(dep.fn)
-        hints = get_type_hints(dep.fn, include_extras=True) if hasattr(dep.fn, "__annotations__") else {}
-        kwargs = self._resolve(dep.fn, sig, hints, request, path_params)
+        meta = self._get_dep_meta(dep.fn)
+        kwargs = self._resolve(meta, request, path_params, cache)
         result = dep.fn(**kwargs)
         cache[dep.fn] = result
         return result
@@ -190,9 +155,12 @@ class Barq:
             match = self.router.match(request.path, request.method)
             if not match:
                 return Response.json({"detail": "Not Found"}, 404)
-            route, params = match
+            route_data, params = match
             request.path_params = params
-            return route.handler(request, params)
+            dep_cache: dict[Callable, Any] = {}
+            kwargs = self._resolve(route_data.meta, request, params, dep_cache)
+            result = route_data.handler(**kwargs)
+            return self._to_response(result)
         except HTTPException as e:
             return Response.json({"detail": e.detail}, e.status_code)
         except ValidationError as e:
