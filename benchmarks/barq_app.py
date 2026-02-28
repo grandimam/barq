@@ -1,4 +1,5 @@
 import sqlite3
+import time
 
 from threading import local
 from typing import Annotated
@@ -7,6 +8,10 @@ from pydantic import BaseModel
 
 from barq import Barq
 from barq import Depends
+from barq import Request
+from barq import Response
+from barq import StreamingResponse
+from barq import stream_parallel
 
 app = Barq()
 
@@ -83,6 +88,49 @@ def cpu_endpoint() -> CpuResponse:
     for i in range(iterations):
         total += i * i
     return CpuResponse(result=total, iterations=iterations)
+
+
+class StreamItem(BaseModel):
+    index: int
+    result: int
+    completed_at: float
+
+
+class ParallelResponse(BaseModel):
+    results: list[StreamItem]
+    total_time: float
+
+
+def cpu_task(task_id: int) -> dict:
+    total = 0
+    for i in range(50000):
+        total += i * i
+    return {"index": task_id, "result": total, "completed_at": time.time()}
+
+
+@app.get("/parallel")
+def parallel_endpoint() -> ParallelResponse:
+    start = time.time()
+    tasks = [lambda i=i: cpu_task(i) for i in range(4)]
+    results = list(stream_parallel(tasks, workers=4))
+    items = [StreamItem(**r["result"]) for r in results]
+    return ParallelResponse(results=items, total_time=time.time() - start)
+
+
+@app.get("/stream")
+def stream_endpoint():
+    tasks = [lambda i=i: cpu_task(i) for i in range(4)]
+    return StreamingResponse.json_stream(stream_parallel(tasks, workers=4))
+
+
+@app.middleware
+def timing_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = call_next(request)
+    elapsed = time.perf_counter() - start
+    if isinstance(response, Response):
+        response.headers["x-response-time"] = f"{elapsed:.6f}"
+    return response
 
 
 @app.on_startup

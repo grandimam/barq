@@ -125,6 +125,8 @@ def main() -> None:
             ("JSON", "/json"),
             ("DB", "/db"),
             ("CPU", "/cpu"),
+            ("PARALLEL", "/parallel"),
+            ("STREAM", "/stream"),
         ]
 
         for label, path in tests:

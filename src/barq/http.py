@@ -83,3 +83,23 @@ def write_response(sock: socket.socket, status: int, headers: dict[str, str], bo
     lines.append("")
     head = "\r\n".join(lines).encode("latin-1")
     sock.sendall(head + body)
+
+
+def write_response_head(sock: socket.socket, status: int, headers: dict[str, str]) -> None:
+    phrase = STATUS_PHRASES.get(status, "Unknown")
+    lines = [f"HTTP/1.1 {status} {phrase}"]
+    for k, v in headers.items():
+        lines.append(f"{k}: {v}")
+    lines.append("")
+    lines.append("")
+    head = "\r\n".join(lines).encode("latin-1")
+    sock.sendall(head)
+
+
+def write_chunk(sock: socket.socket, data: bytes) -> None:
+    chunk = f"{len(data):x}\r\n".encode("latin-1") + data + b"\r\n"
+    sock.sendall(chunk)
+
+
+def write_chunk_end(sock: socket.socket) -> None:
+    sock.sendall(b"0\r\n\r\n")

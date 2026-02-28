@@ -7,9 +7,13 @@ from typing import Any
 from typing import Callable
 
 from .http import HTTPParser
+from .http import write_chunk
+from .http import write_chunk_end
 from .http import write_response
+from .http import write_response_head
 from .types import Request
 from .types import Response
+from .types import StreamingResponse
 
 
 class ThreadPool:
@@ -59,7 +63,7 @@ class SocketReader:
 class Server:
     def __init__(
         self,
-        handler: Callable[[Request], Response],
+        handler: Callable[[Request], Response | StreamingResponse],
         host: str = "127.0.0.1",
         port: int = 8000,
         workers: int | None = None,
@@ -114,7 +118,13 @@ class Server:
                 body=raw.body,
             )
             response = self.handler(request)
-            write_response(client, response.status_code, response.headers, response.body)
+            if isinstance(response, StreamingResponse):
+                write_response_head(client, response.status_code, response.headers)
+                for chunk in response.iterator:
+                    write_chunk(client, chunk)
+                write_chunk_end(client)
+            else:
+                write_response(client, response.status_code, response.headers, response.body)
         except Exception:
             write_response(client, 500, {"content-length": "0"}, b"")
         finally:

@@ -46,25 +46,23 @@ name = "barq"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "aiosqlite" },
     { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "aiosqlite" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "aiosqlite", specifier = ">=0.22.1" },
-    { name = "pydantic", specifier = ">=2.12.5" },
-]
+requires-dist = [{ name = "pydantic", specifier = ">=2.0.0" }]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "fastapi", specifier = ">=0.133.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "uvicorn", specifier = ">=0.41.0" },

@@ -1,7 +1,11 @@
+import asyncio
 import sqlite3
+import time
 
 import aiosqlite
 from fastapi import FastAPI
+from fastapi import Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -73,6 +77,51 @@ async def cpu_endpoint() -> CpuResponse:
     for i in range(iterations):
         total += i * i
     return CpuResponse(result=total, iterations=iterations)
+
+
+class StreamItem(BaseModel):
+    index: int
+    result: int
+    completed_at: float
+
+
+class ParallelResponse(BaseModel):
+    results: list[StreamItem]
+    total_time: float
+
+
+async def cpu_task_async(task_id: int) -> dict:
+    total = 0
+    for i in range(50000):
+        total += i * i
+    return {"index": task_id, "result": total, "completed_at": time.time()}
+
+
+@app.get("/parallel")
+async def parallel_endpoint() -> ParallelResponse:
+    start = time.time()
+    tasks = [cpu_task_async(i) for i in range(4)]
+    results = await asyncio.gather(*tasks)
+    items = [StreamItem(**r) for r in results]
+    return ParallelResponse(results=items, total_time=time.time() - start)
+
+
+@app.get("/stream")
+async def stream_endpoint():
+    async def generate():
+        for i in range(4):
+            result = await cpu_task_async(i)
+            yield f'{{"index": {result["index"]}, "result": {result["result"]}, "completed_at": {result["completed_at"]}}}\n'
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@app.middleware("http")
+async def timing_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - start
+    response.headers["x-response-time"] = f"{elapsed:.6f}"
+    return response
 
 
 @app.on_event("startup")

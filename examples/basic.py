@@ -1,3 +1,5 @@
+import time
+
 from typing import Annotated
 
 from pydantic import BaseModel
@@ -5,9 +7,28 @@ from pydantic import BaseModel
 from barq import Barq
 from barq import Depends
 from barq import HTTPException
+from barq import Request
 from barq import Response
 
 app = Barq()
+
+
+@app.middleware
+def timing_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = call_next(request)
+    elapsed = time.perf_counter() - start
+    if isinstance(response, Response):
+        response.headers["x-response-time"] = f"{elapsed:.4f}s"
+    return response
+
+
+@app.middleware
+def logging_middleware(request: Request, call_next):
+    print(f"--> {request.method} {request.path}")
+    response = call_next(request)
+    print(f"<-- {response.status_code}")
+    return response
 
 
 class Item(BaseModel):
@@ -86,6 +107,11 @@ def health() -> dict[str, str]:
 @app.on_startup
 def startup() -> None:
     print("Application starting up...")
+
+
+@app.on_shutdown
+def shutdown() -> None:
+    print("Application shutting down...")
 
 
 if __name__ == "__main__":

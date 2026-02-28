@@ -13,8 +13,10 @@ from pydantic import ValidationError
 
 from .server import Server
 from .types import HTTPException
+from .types import Middleware
 from .types import Request
 from .types import Response
+from .types import StreamingResponse
 
 
 class Depends:
@@ -64,9 +66,11 @@ class Router:
 
 
 class Barq:
-    def __init__(self):
+    def __init__(self) -> None:
         self.router = Router()
         self._startup: list[Callable[[], None]] = []
+        self._shutdown: list[Callable[[], None]] = []
+        self._middlewares: list[Middleware] = []
 
     def get(self, path: str) -> Callable:
         return self._route(path, "GET")
@@ -77,8 +81,17 @@ class Barq:
     def put(self, path: str) -> Callable:
         return self._route(path, "PUT")
 
+    def patch(self, path: str) -> Callable:
+        return self._route(path, "PATCH")
+
     def delete(self, path: str) -> Callable:
         return self._route(path, "DELETE")
+
+    def options(self, path: str) -> Callable:
+        return self._route(path, "OPTIONS")
+
+    def head(self, path: str) -> Callable:
+        return self._route(path, "HEAD")
 
     def _route(self, path: str, method: str) -> Callable:
         def decorator(fn: Callable) -> Callable:
@@ -86,23 +99,33 @@ class Barq:
             return fn
         return decorator
 
+    def middleware(self, fn: Middleware) -> Middleware:
+        self._middlewares.append(fn)
+        return fn
+
+    def add_middleware(self, fn: Middleware) -> None:
+        self._middlewares.append(fn)
+
     def on_startup(self, fn: Callable[[], None]) -> Callable[[], None]:
         self._startup.append(fn)
         return fn
 
-    def _wrap(self, fn: Callable) -> Callable[[Request, dict[str, str]], Response]:
+    def on_shutdown(self, fn: Callable[[], None]) -> Callable[[], None]:
+        self._shutdown.append(fn)
+        return fn
+
+    def _wrap(self, fn: Callable) -> Callable[[Request, dict[str, str]], Response | StreamingResponse]:
         sig = inspect.signature(fn)
         hints = get_type_hints(fn, include_extras=True) if hasattr(fn, "__annotations__") else {}
 
-        def handler(request: Request, path_params: dict[str, str]) -> Response:
-            kwargs = self._resolve(fn, sig, hints, request, path_params)
+        def handler(request: Request, path_params: dict[str, str]) -> Response | StreamingResponse:
+            kwargs = self._resolve(sig, hints, request, path_params)
             result = fn(**kwargs)
             return self._to_response(result)
         return handler
 
     def _resolve(
         self,
-        _fn: Callable,
         sig: inspect.Signature,
         hints: dict[str, Any],
         request: Request,
@@ -160,7 +183,7 @@ class Barq:
             return cache[dep.fn]
         sig = inspect.signature(dep.fn)
         hints = get_type_hints(dep.fn, include_extras=True) if hasattr(dep.fn, "__annotations__") else {}
-        kwargs = self._resolve(dep.fn, sig, hints, request, path_params)
+        kwargs = self._resolve(sig, hints, request, path_params)
         result = dep.fn(**kwargs)
         cache[dep.fn] = result
         return result
@@ -174,9 +197,11 @@ class Barq:
             return val.lower() in ("true", "1")
         return val
 
-    def _to_response(self, result: Any) -> Response:
-        if isinstance(result, Response):
+    def _to_response(self, result: Any) -> Response | StreamingResponse:
+        if isinstance(result, (Response, StreamingResponse)):
             return result
+        if inspect.isgenerator(result):
+            return StreamingResponse.json_stream(result)
         if isinstance(result, (BaseModel, dict, list)):
             return Response.json(result)
         if isinstance(result, str):
@@ -185,14 +210,20 @@ class Barq:
             return Response.empty()
         return Response.json(result)
 
-    def _handle(self, request: Request) -> Response:
-        try:
-            match = self.router.match(request.path, request.method)
+    def _handle(self, request: Request) -> Response | StreamingResponse:
+        def dispatch(req: Request) -> Response | StreamingResponse:
+            match = self.router.match(req.path, req.method)
             if not match:
                 return Response.json({"detail": "Not Found"}, 404)
             route, params = match
-            request.path_params = params
-            return route.handler(request, params)
+            req.path_params = params
+            return route.handler(req, params)
+
+        try:
+            handler: Callable[[Request], Response | StreamingResponse] = dispatch
+            for mw in reversed(self._middlewares):
+                handler = self._wrap_middleware(mw, handler)
+            return handler(request)
         except HTTPException as e:
             return Response.json({"detail": e.detail}, e.status_code)
         except ValidationError as e:
@@ -200,7 +231,20 @@ class Barq:
         except Exception:
             return Response.json({"detail": "Internal Server Error"}, 500)
 
+    def _wrap_middleware(
+        self,
+        mw: Middleware,
+        next_handler: Callable[[Request], Response | StreamingResponse],
+    ) -> Callable[[Request], Response | StreamingResponse]:
+        def wrapped(request: Request) -> Response | StreamingResponse:
+            return mw(request, next_handler)
+        return wrapped
+
     def run(self, host: str = "127.0.0.1", port: int = 8000, workers: int | None = None) -> None:
         for fn in self._startup:
             fn()
-        Server(self._handle, host, port, workers).run()
+        try:
+            Server(self._handle, host, port, workers).run()
+        finally:
+            for fn in self._shutdown:
+                fn()
