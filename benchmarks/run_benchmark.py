@@ -89,7 +89,11 @@ def main() -> None:
     workers = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 
     print(f"\n{'='*60}")
-    print(f"  BARQ vs FASTAPI  ({n} requests, {workers} workers)")
+    print(f"  BARQ vs FASTAPI (optimal configs)")
+    print(f"  {n} requests, {workers} concurrent clients")
+    print(f"{'='*60}")
+    print(f"  Barq: 4 threads, blocking I/O")
+    print(f"  FastAPI: async + aiosqlite")
     print(f"{'='*60}\n")
 
     procs: list[subprocess.Popen] = []
@@ -102,7 +106,7 @@ def main() -> None:
         ))
         procs.append(subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "benchmarks.fastapi_app:app",
-             "--host", "127.0.0.1", "--port", "8002", "--workers", "4"],
+             "--host", "127.0.0.1", "--port", "8002"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         ))
@@ -125,8 +129,8 @@ def main() -> None:
 
         for label, path in tests:
             print(f"─── {label} ───")
-            barq = bench("Barq", f"http://127.0.0.1:8001{path}", n, workers)
-            fapi = bench("FastAPI", f"http://127.0.0.1:8002{path}", n, workers)
+            barq = bench("Barq (4 threads)", f"http://127.0.0.1:8001{path}", n, workers)
+            fapi = bench("FastAPI (async)", f"http://127.0.0.1:8002{path}", n, workers)
             print_result(barq)
             print_result(fapi)
 
