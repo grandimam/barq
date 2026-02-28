@@ -1,16 +1,12 @@
 import sqlite3
 
-from contextvars import ContextVar
-from typing import Annotated
-
-from fastapi import Depends
+import aiosqlite
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 app = FastAPI()
 
 DB_PATH = "/tmp/fastapi_bench.db"
-_db_conn: ContextVar[sqlite3.Connection | None] = ContextVar("db_conn", default=None)
 
 
 def init_db() -> None:
@@ -32,15 +28,6 @@ def init_db() -> None:
     conn.close()
 
 
-def get_db() -> sqlite3.Connection:
-    conn = _db_conn.get()
-    if conn is None:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        _db_conn.set(conn)
-    return conn
-
-
 class UserResponse(BaseModel):
     id: int
     name: str
@@ -59,7 +46,7 @@ class CpuResponse(BaseModel):
 
 
 @app.get("/json")
-def json_endpoint() -> JsonResponse:
+async def json_endpoint() -> JsonResponse:
     return JsonResponse(
         message="Hello, World!",
         items=[{"id": i, "value": i * 10} for i in range(20)],
@@ -71,14 +58,16 @@ def json_endpoint() -> JsonResponse:
 
 
 @app.get("/db")
-def db_endpoint(db: Annotated[sqlite3.Connection, Depends(get_db)]) -> list[UserResponse]:
-    cursor = db.execute("SELECT id, name, email FROM users LIMIT 10")
-    rows = cursor.fetchall()
-    return [UserResponse(id=row["id"], name=row["name"], email=row["email"]) for row in rows]
+async def db_endpoint() -> list[UserResponse]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT id, name, email FROM users LIMIT 10") as cursor:
+            rows = await cursor.fetchall()
+            return [UserResponse(id=row["id"], name=row["name"], email=row["email"]) for row in rows]
 
 
 @app.get("/cpu")
-def cpu_endpoint() -> CpuResponse:
+async def cpu_endpoint() -> CpuResponse:
     total = 0
     iterations = 100000
     for i in range(iterations):
@@ -93,4 +82,4 @@ def startup() -> None:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8002, workers=4)
+    uvicorn.run(app, host="127.0.0.1", port=8002)

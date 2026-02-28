@@ -82,8 +82,6 @@ if __name__ == "__main__":
 
 ## Benchmarks
 
-Comparison against FastAPI (uvicorn, 4 worker processes).
-
 ### System
 
 | Component | Value                  |
@@ -93,20 +91,40 @@ Comparison against FastAPI (uvicorn, 4 worker processes).
 | Python    | 3.13.0 (free-threaded) |
 | Platform  | Darwin arm64           |
 
-### Results (1000 requests, 10 concurrent clients)
+### Optimal Configs (500 requests, 10 concurrent clients)
 
-| Scenario      | Barq (4 threads) | FastAPI (4 processes) | Difference               |
-| ------------- | ---------------- | --------------------- | ------------------------ |
-| **JSON**      | 10,114 req/s     | 5,665 req/s           | **Free Threaded: +79%**  |
-| **DB Query**  | 9,962 req/s      | 1,015 req/s           | **Free Threaded: +881%** |
-| **CPU Bound** | 879 req/s        | 1,231 req/s           | FastAPI: +29%            |
+Each framework using its optimal single-process configuration:
+
+- **Barq**: 4 threads + blocking sqlite3
+- **FastAPI**: async + aiosqlite
+
+| Scenario      | Barq (4 threads) | FastAPI (async) | Difference  |
+| ------------- | ---------------- | --------------- | ----------- |
+| **JSON**      | 10,009 req/s     | 3,829 req/s     | Barq: +161% |
+| **DB Query**  | 8,501 req/s      | 1,996 req/s     | Barq: +326% |
+| **CPU Bound** | 866 req/s        | 260 req/s       | Barq: +232% |
+
+### Multiprocess Comparison (500 requests, 10 concurrent clients)
+
+Barq threads vs FastAPI with 4 worker processes:
+
+| Scenario      | Barq (4 threads) | FastAPI (4 processes) | Difference    |
+| ------------- | ---------------- | --------------------- | ------------- |
+| **JSON**      | 10,114 req/s     | 5,665 req/s           | Barq: +79%    |
+| **DB Query**  | 9,962 req/s      | 1,015 req/s           | Barq: +881%   |
+| **CPU Bound** | 879 req/s        | 1,231 req/s           | FastAPI: +29% |
 
 ### Analysis
 
-- **JSON/DB (I/O bound)**: Barq wins due to shared memory, no IPC overhead
-- **CPU bound**: FastAPI wins due to process isolation (no memory contention)
+- **I/O-bound (JSON, DB)**: Barq wins in both configurations due to shared memory and no IPC overhead
+- **CPU-bound (async)**: Barq wins because async cannot parallelize CPU work (blocks event loop)
+- **CPU-bound (multiprocess)**: FastAPI wins due to process isolation (no memory contention)
 
-Note: CPU benchmark uses pure Python arithmetic. C extensions like `hashlib` have internal locks that prevent parallelism even with free-threaded Python.
+**Notes:**
+
+- CPU benchmark uses pure Python arithmetic
+- C extensions like `hashlib` have internal locks that prevent parallelism even with free-threaded Python
+- For CPU-bound async workloads, FastAPI users would typically use `run_in_executor` or multiple processes
 
 ## Architecture
 
