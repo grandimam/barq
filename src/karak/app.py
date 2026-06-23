@@ -30,7 +30,7 @@ class HandlerMeta:
     params: list[tuple[str, inspect.Parameter, Any]]
 
 
-class Barq:
+class Karak:
     def __init__(self):
         self.router = RadixRouter()
         self._startup: list[Callable[[], None]] = []

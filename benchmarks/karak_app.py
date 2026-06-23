@@ -5,12 +5,12 @@ from typing import Annotated
 
 from pydantic import BaseModel
 
-from barq import Barq
-from barq import Depends
+from karak import Karak
+from karak import Depends
 
-app = Barq()
+app = Karak()
 
-DB_PATH = "/tmp/barq_bench.db"
+DB_PATH = "/tmp/karak_bench.db"
 _thread_local = local()
 
 

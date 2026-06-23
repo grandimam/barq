@@ -89,10 +89,10 @@ def main() -> None:
     workers = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 
     print(f"\n{'='*60}")
-    print(f"  BARQ vs FASTAPI (optimal configs)")
+    print(f"  KARAK vs FASTAPI (optimal configs)")
     print(f"  {n} requests, {workers} concurrent clients")
     print(f"{'='*60}")
-    print(f"  Barq: 4 threads, blocking I/O")
+    print(f"  Karak: 4 threads, blocking I/O")
     print(f"  FastAPI: async + aiosqlite")
     print(f"{'='*60}\n")
 
@@ -100,7 +100,7 @@ def main() -> None:
     try:
         print("Starting servers...")
         procs.append(subprocess.Popen(
-            [sys.executable, "benchmarks/barq_app.py"],
+            [sys.executable, "benchmarks/karak_app.py"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         ))
@@ -112,7 +112,7 @@ def main() -> None:
         ))
 
         if not wait_server("http://127.0.0.1:8001/json"):
-            print("Barq failed to start")
+            print("Karak failed to start")
             return
         if not wait_server("http://127.0.0.1:8002/json"):
             print("FastAPI failed to start")
@@ -129,13 +129,13 @@ def main() -> None:
 
         for label, path in tests:
             print(f"─── {label} ───")
-            barq = bench("Barq (4 threads)", f"http://127.0.0.1:8001{path}", n, workers)
+            karak = bench("Karak (4 threads)", f"http://127.0.0.1:8001{path}", n, workers)
             fapi = bench("FastAPI (async)", f"http://127.0.0.1:8002{path}", n, workers)
-            print_result(barq)
+            print_result(karak)
             print_result(fapi)
 
-            diff = ((barq.rps / fapi.rps) - 1) * 100 if fapi.rps > 0 else 0
-            winner = "Barq" if diff > 0 else "FastAPI"
+            diff = ((karak.rps / fapi.rps) - 1) * 100 if fapi.rps > 0 else 0
+            winner = "Karak" if diff > 0 else "FastAPI"
             print(f"    → {winner} {abs(diff):.1f}% faster\n")
 
     finally:

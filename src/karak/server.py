@@ -88,7 +88,7 @@ class Server:
         sel = selectors.DefaultSelector()
         sel.register(sock, selectors.EVENT_READ)
 
-        print(f"Barq running at http://{self.host}:{self.port} ({self.pool.num_workers} threads)")
+        print(f"Karak running at http://{self.host}:{self.port} ({self.pool.num_workers} threads)")
 
         try:
             while True:

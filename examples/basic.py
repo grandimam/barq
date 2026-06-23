@@ -2,12 +2,12 @@ from typing import Annotated
 
 from pydantic import BaseModel
 
-from barq import Barq
-from barq import Depends
-from barq import HTTPException
-from barq import Response
+from karak import Karak
+from karak import Depends
+from karak import HTTPException
+from karak import Response
 
-app = Barq()
+app = Karak()
 
 
 class Item(BaseModel):
@@ -33,7 +33,7 @@ def get_db() -> dict[int, Item]:
 
 @app.get("/")
 def index() -> dict[str, str]:
-    return {"message": "Welcome to Barq!"}
+    return {"message": "Welcome to Karak!"}
 
 
 @app.get("/items")

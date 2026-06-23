@@ -1,10 +1,12 @@
-# Barq
+# Karak
 
 > **⚠️ Experimental**: This project is a proof-of-concept exploring free-threaded Python (PEP 703) for HTTP frameworks. Not production-ready.
 
 A pure-Python HTTP framework built for free-threaded Python 3.13+. No async/await — just threads with true parallelism.
 
 **2-5x faster than FastAPI** on real workloads.
+
+Website: [karak.dev](https://karak.dev)
 
 ## Requirements
 
@@ -14,16 +16,16 @@ A pure-Python HTTP framework built for free-threaded Python 3.13+. No async/awai
 ## Installation
 
 ```bash
-uv add barq
+uv add karak
 
-uv add barq[fast]
+uv add karak[fast]
 ```
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/grandimam/barq.git
-cd barq
+git clone https://github.com/grandimam/karak.git
+cd karak
 
 # Install
 uv sync
@@ -52,9 +54,9 @@ uv run python benchmarks/run_benchmark.py 1000 10
 ```python
 from typing import Annotated
 from pydantic import BaseModel
-from barq import Barq, Depends
+from karak import Karak, Depends
 
-app = Barq()
+app = Karak()
 
 class Item(BaseModel):
     name: str
@@ -127,13 +129,13 @@ if __name__ == "__main__":
 - **I/O-bound (JSON, DB)**: 2-3.5x faster due to simpler threading model and shared memory
 - **CPU-bound**: 5x faster — free-threaded Python enables true parallelism while async is single-threaded
 - **Scales with cores**: Adding threads directly improves CPU-bound throughput
-- **Latency**: Barq achieves lower p99 latency under load (no async task scheduling overhead)
+- **Latency**: Karak achieves lower p99 latency under load (no async task scheduling overhead)
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                        Barq App                         │
+│                       Karak App                         │
 │              (app.py: DI, validation, handlers)         │
 ├─────────────────────────────────────────────────────────┤
 │                     Radix Router                        │
@@ -153,9 +155,9 @@ if __name__ == "__main__":
 ## Project Structure
 
 ```
-src/barq/
+src/karak/
 ├── __init__.py   # exports
-├── app.py        # Barq, Depends, DI resolution
+├── app.py        # Karak, Depends, DI resolution
 ├── router.py     # RadixRouter, O(1) matching
 ├── types.py      # Request, Response, HTTPException
 ├── server.py     # Server, ThreadPool, keep-alive

@@ -1,5 +1,5 @@
 [project]
-name = "barq"
+name = "karak"
 version = "0.1.0"
 description = "A pure-Python HTTP framework built for free-threaded Python"
 readme = "README.md"

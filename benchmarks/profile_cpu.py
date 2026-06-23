@@ -5,9 +5,9 @@ import pstats
 from io import StringIO
 
 from pydantic import BaseModel
-from barq import Barq, Response
-from barq.request import Request
-from barq.routing import Router
+from karak import Karak, Response
+from karak.request import Request
+from karak.routing import Router
 
 
 class CpuResponse(BaseModel):
@@ -85,7 +85,7 @@ def main():
 
     # 7. Full handler (without network)
     print("7. Full Handler Simulation")
-    app = Barq()
+    app = Karak()
 
     @app.get("/cpu")
     def cpu_endpoint() -> CpuResponse:
